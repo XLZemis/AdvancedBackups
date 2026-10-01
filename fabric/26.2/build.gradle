@@ -1,0 +1,94 @@
+plugins {
+	// Loom 1.18 起插件 id 为 net.fabricmc.fabric-loom（旧 id 'fabric-loom' 仍可用但已不推荐）
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+// 引入仓库根部的全局属性，其中定义了 core 模块打出的库路径 abCoreLibPath
+apply from: '../../global.properties'
+
+group = project.maven_group
+// Gradle 9 移除了顶层的 archivesBaseName 属性，改用 base.archivesName
+base {
+	archivesName = 'AdvancedBackups-' + modloaderName + "-" + minecraftVersion
+}
+
+loom {
+	// 注意 1：Minecraft 26.x 已不再混淆（non-obfuscated），因此不需要任何 mappings
+	//        （既不能用 yarn，也不能声明 officialMojangMappings），Loom 直接使用原版名。
+	// 注意 2：不带 access widener。1.21 模块的 AW 仅加宽了
+	//        ClientPlayNetworkHandler.lastSeenMessagesCollector，该字段在 1.20.5 后已不存在，
+	//        且在本工程源码中无任何引用（历史残留），故 26.2 模块直接移除。
+}
+
+repositories {
+	// Loom 会自动加入 Minecraft 与其依赖所需的 maven 仓库，此处仅用于依赖其它 mod 时补充
+}
+
+configurations {
+	// 需要被塞进最终 jar 的额外依赖（core 库）
+	extraLibs
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	// Minecraft 26.x 无混淆，故不存在 mappings 配置；fabric-loader 与 fabric-api 也不需要 remap，
+	// 因此按官方模板使用普通 implementation。
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// core 模块产出的共享库：编译期可见 + 打包时展开进 jar
+	implementation files(abCoreLibPath)
+	extraLibs files(abCoreLibPath)
+}
+
+processResources {
+	inputs.property "version", project.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	// Minecraft 26.2 的 javaVersion.majorVersion = 25
+	it.options.release = 25
+	it.options.encoding = 'UTF-8'
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	manifest {
+		attributes([
+				"Main-Class"              : "computer.heather.advancedbackups.cli.AdvancedBackupsCLI",
+				"Specification-Title"     : "advancedbackups",
+				"Specification-Vendor"    : "Heather White",
+				"Specification-Version"   : "1",
+				"Implementation-Title"    : project.name,
+				"Implementation-Version"  : project.jar.archiveVersion,
+				"Implementation-Vendor"   : "Heather White",
+				"Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+		])
+	}
+	// 把 core 库展开进最终 jar，保证独立可用
+	from {
+		configurations.extraLibs.collect { it.isDirectory() ? it : zipTree(it) }
+	}
+}
+
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java
+		}
+	}
+	repositories {
+		// 发布目标仓库在此配置（当前留空）
+	}
+}
