@@ -54,6 +54,9 @@ tasks.withType(JavaCompile).configureEach {
 	// Minecraft 26.2 的 javaVersion.majorVersion = 25
 	it.options.release = 25
 	it.options.encoding = 'UTF-8'
+	// 26.x 是「无混淆 + 大规模改名」的版本，编译期打开 deprecation 提示能尽早发现
+	// 官方标了 @Deprecated 的旧 API 用法（默认 javac 只给一句概述，不给具体位置）
+	it.options.compilerArgs << '-Xlint:deprecation'
 }
 
 java {
