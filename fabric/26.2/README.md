@@ -59,10 +59,38 @@ JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64 ./gradlew -Pversion=2.2.0 build
    `net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents`、
    `net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents`。
 
+## 已逐项核实的 API 对照（用 javap + 检查 26.2 deobf jar 得出）
+
+以下 Mojang 类名均已确认存在于 `minecraft-merged-deobf-26.2.jar`：
+
+| 1.21（Yarn） | 26.2（Mojang） |
+|---|---|
+| `net.minecraft.server.MinecraftServer` | 同名 ✓ |
+| `net.minecraft.server.network.ServerPlayerEntity` | `net.minecraft.server.level.ServerPlayer` |
+| `net.minecraft.server.world.ServerWorld` | `net.minecraft.server.level.ServerLevel` |
+| `net.minecraft.util.WorldSavePath` | `net.minecraft.world.level.storage.LevelResource` |
+| `net.minecraft.util.Identifier` | `net.minecraft.resources.Identifier` |
+| `net.minecraft.network.packet.CustomPayload` | `net.minecraft.network.protocol.common.custom.CustomPacketPayload` |
+| `net.minecraft.network.packet.c2s.play.CommandExecutionC2SPacket` | `net.minecraft.network.protocol.game.ServerboundChatCommandPacket` |
+| `net.minecraft.client.MinecraftClient` | `net.minecraft.client.Minecraft` |
+| `net.minecraft.client.network.ClientPlayNetworkHandler` | `net.minecraft.client.multiplayer.ClientPacketListener` |
+
+Fabric API 侧（已用 javap 核实签名，位置未变）：
+
+- `ServerLifecycleEvents.SERVER_STARTING / SERVER_STARTED / SERVER_STOPPING / SERVER_STOPPED` ✓
+- `ServerTickEvents.END_SERVER_TICK` ✓
+- `PayloadTypeRegistry.serverboundPlay()` 现返回 `PayloadTypeRegistry<RegistryFriendlyByteBuf>`，
+  `clientboundPlay()` 同理 → 注册 S2C/C2S 包时泛型参数与 1.21 不同
+- `ServerPlayNetworking.registerGlobalReceiver(Type<T>, PlayPayloadHandler<T>)` ✓
+  （`ServerPlayerEntity` → `ServerPlayer`）
+- `ClientCommandManager` → **`ClientCommands`**（同包 `...api.client.command.v2`）
+
 ## 移植顺序建议
 
-1. 先移植 `AdvancedBackups.java`（入口，只用 `ServerLifecycleEvents`，改动最小）；
-2. 再移植 `network/`（`ServerPlayConnectionEvents` + 自定义包，需核对 `PacketCodec` 写法）；
-3. 最后移植 `client/`（Yarn→Mojang 改名最密集，且涉及 `ClientCommands` 新 API 与 Toast 渲染）。
+1. `AdvancedBackups.java`（入口，主要用 `ServerLifecycleEvents` / `ServerTickEvents`，
+   但含 `MinecraftServer.getWorlds()`、`ServerLevel.savingDisabled`、`server.saveAll(...)`、
+   `getSaveProperties().getLevelName()`、`FabricLoaderImpl` 用法，需逐个核对 26.2 是否仍有该成员）；
+2. `network/`（自定义包 + `PayloadTypeRegistry` 泛型变化）；
+3. `client/`（Yarn→Mojang 改名最密集，且涉及 `ClientCommands` 新 API 与 Toast 渲染）。
 
 `fabric/1.21.2` 与 `fabric/1.21` 的差异可作为"小版本升级改动量"的参考。
